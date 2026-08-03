@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import {
+  Pressable,
   StyleSheet,
   TextInput,
   View,
@@ -8,7 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { STROKE, type IconComponent } from '@/components/icons';
+import { Icons, STROKE, STROKE_BOLD, type IconComponent } from '@/components/icons';
 import { alpha, colors, radii, spacing, text } from '@/theme';
 import { Text } from './text';
 
@@ -101,6 +102,10 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
 /**
  * Read-only field that behaves like a select — the Root and Shelf pickers on
  * the manual add form. Renders as a field box with a trailing chevron.
+ *
+ * It's a `Pressable`, not a `View` with a touch handler: `onTouchEnd` never
+ * fires on web and is swallowed by any scroll gesture on native, which is what
+ * made these two fields look dead.
  */
 export function SelectField({
   label,
@@ -109,6 +114,8 @@ export function SelectField({
   trailing,
   leading,
   error,
+  /** Renders the field in its open state, matching the chevron's direction. */
+  expanded = false,
   containerStyle,
 }: {
   label?: string;
@@ -117,6 +124,7 @@ export function SelectField({
   trailing?: React.ReactNode;
   leading?: React.ReactNode;
   error?: string;
+  expanded?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }) {
   return (
@@ -127,15 +135,18 @@ export function SelectField({
         </Text>
       ) : null}
 
-      <View
-        style={[
-          styles.field,
-          styles.selectField,
-          { borderColor: error ? colors.danger : alpha.border },
-        ]}
+      <Pressable
+        onPress={onPress}
+        disabled={!onPress}
         accessibilityRole="button"
         accessibilityLabel={label ? `${label}: ${value}` : value}
-        onTouchEnd={onPress}
+        accessibilityState={{ expanded }}
+        style={({ pressed }) => [
+          styles.field,
+          styles.selectField,
+          { borderColor: error ? colors.danger : expanded ? colors.ink : alpha.border },
+          pressed && styles.selectPressed,
+        ]}
       >
         <View style={styles.selectValue}>
           {leading}
@@ -144,13 +155,91 @@ export function SelectField({
           </Text>
         </View>
         {trailing}
-      </View>
+      </Pressable>
 
       {error ? (
         <Text variant="meta" tone="danger" style={styles.message}>
           {error}
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+export interface SelectOption {
+  id: string;
+  label: string;
+  /** A status dot or icon bubble shown before the label. */
+  leading?: React.ReactNode;
+  meta?: string;
+}
+
+/**
+ * The list a `SelectField` opens.
+ *
+ * Rendered in the flow underneath the field rather than in an overlay: these
+ * fields sit on a scrolling form, and a floating menu would need to track the
+ * field's position through every scroll and keyboard change for no gain.
+ */
+export function SelectOptions({
+  options,
+  selectedId,
+  onSelect,
+  emptyLabel = 'Nothing to choose from yet.',
+  style,
+}: {
+  options: SelectOption[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+  emptyLabel?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  if (options.length === 0) {
+    return (
+      <View style={[styles.optionSheet, styles.optionEmpty, style]}>
+        <Text variant="meta" tone="muted">
+          {emptyLabel}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.optionSheet, style]}>
+      {options.map((option, index) => {
+        const selected = option.id === selectedId;
+        return (
+          <Pressable
+            key={option.id}
+            onPress={() => onSelect(option.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={`${option.label}${selected ? ', selected' : ''}`}
+            style={({ pressed }) => [
+              styles.optionRow,
+              index > 0 && styles.optionDivider,
+              pressed && styles.selectPressed,
+            ]}
+          >
+            {option.leading}
+
+            <View style={styles.optionText}>
+              <Text variant="bodySmStrong" numberOfLines={1}>
+                {option.label}
+              </Text>
+              {option.meta ? (
+                <Text variant="micro" tone="muted" numberOfLines={1}>
+                  {option.meta}
+                </Text>
+              ) : null}
+            </View>
+
+            {selected ? (
+              <Icons.check size={17} color={colors.ink} strokeWidth={STROKE_BOLD} />
+            ) : null}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -171,6 +260,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.input,
     justifyContent: 'space-between',
   },
+  selectPressed: { opacity: 0.75 },
   selectValue: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -196,4 +286,22 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   message: { marginTop: spacing.xs, marginHorizontal: 2 },
+
+  optionSheet: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: alpha.border,
+    borderRadius: radii.input,
+    overflow: 'hidden',
+  },
+  optionEmpty: { paddingVertical: spacing.lg, paddingHorizontal: spacing.xl },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.xl,
+  },
+  optionDivider: { borderTopWidth: 1, borderTopColor: alpha.hairline },
+  optionText: { flex: 1, minWidth: 0 },
 });

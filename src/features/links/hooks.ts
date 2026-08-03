@@ -50,6 +50,9 @@ function invalidateLinkScopes(
   void queryClient.invalidateQueries({ queryKey: queryKeys.roots.list() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.home.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.timeline.all });
+  // A link can also sit in a shared folder, whose counts and list come from the
+  // workspace rather than the shelf.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.workspace.all });
 }
 
 export function useCreateLink() {

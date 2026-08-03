@@ -15,7 +15,8 @@ import { Emphasis, Text } from '@/components/ui/text';
 import { formatRelative } from '@/lib/date';
 import { useUiStore } from '@/store/ui.store';
 import { accents, alpha, colors, layout, radii, spacing } from '@/theme';
-import { groupTimeline, useTimeline, type TimelineScope } from '../hooks';
+import { groupTimeline, useTimeline, useUndoTimelineEvent, type TimelineScope } from '../hooks';
+import { hrefForTarget } from '../targets';
 
 /**
  * Frame 14 — the activity feed.
@@ -24,10 +25,14 @@ import { groupTimeline, useTimeline, type TimelineScope } from '../hooks';
  * card. Events group under Today / Yesterday / Earlier headings.
  */
 
-const KIND_STYLES: Record<
-  TimelineEvent['kind'],
-  { accent: keyof typeof accents; icon: typeof Icons.plus; strokeWidth: number; pink?: boolean }
-> = {
+interface KindStyle {
+  accent: keyof typeof accents;
+  icon: typeof Icons.plus;
+  strokeWidth: number;
+  pink?: boolean;
+}
+
+const KIND_STYLES: Record<TimelineEvent['kind'], KindStyle> = {
   added: { accent: 'green', icon: Icons.plus, strokeWidth: STROKE_BOLD },
   ai_summary: { accent: 'pink', icon: Icons.sparkles, strokeWidth: STROKE, pink: true },
   dead_link: { accent: 'red', icon: Icons.close, strokeWidth: 2 },
@@ -37,11 +42,23 @@ const KIND_STYLES: Record<
   comment: { accent: 'lavender', icon: Icons.comment, strokeWidth: STROKE },
 };
 
+/** A kind the client doesn't know yet must not blank the row out. */
+const FALLBACK_KIND_STYLE: KindStyle = {
+  accent: 'blue',
+  icon: Icons.clock,
+  strokeWidth: STROKE,
+};
+
 export function TimelineScreen() {
   const router = useRouter();
   const showToast = useUiStore((state) => state.showToast);
+  const kinds = useUiStore((state) => state.timelineKinds);
+  const clearKinds = useUiStore((state) => state.clearTimelineKinds);
   const [scope, setScope] = useState<TimelineScope>('personal');
-  const timeline = useTimeline(scope);
+  const timeline = useTimeline(scope, kinds);
+  const undo = useUndoTimelineEvent();
+
+  const isFiltered = kinds.length > 0;
 
   return (
     <Screen hasTabBar onRefresh={() => void timeline.refetch()} refreshing={timeline.isRefetching}>
@@ -49,10 +66,13 @@ export function TimelineScreen() {
         <Text variant="screenTitle">Timeline</Text>
         <IconButton
           icon={Icons.filter}
-          accessibilityLabel="Filter activity"
+          accessibilityLabel={isFiltered ? 'Filter activity, filters on' : 'Filter activity'}
           size={layout.headerButtonSm}
           iconSize={18}
-          onPress={() => showToast('Filters are coming soon.', 'info')}
+          // The ink fill is the only signal that the feed is showing a subset.
+          backgroundColor={isFiltered ? colors.ink : undefined}
+          color={isFiltered ? colors.onInk : undefined}
+          onPress={() => router.push('/timeline-filter')}
         />
       </View>
 
@@ -69,14 +89,24 @@ export function TimelineScreen() {
       <QueryBoundary
         query={timeline}
         isEmpty={(data) => data.length === 0}
-        empty={{
-          title: 'Nothing here yet',
-          description:
-            scope === 'team'
-              ? 'Activity from your workspace will show up here.'
-              : 'Save a link and your activity will start appearing.',
-          icon: Icons.clock,
-        }}
+        empty={
+          isFiltered
+            ? {
+                title: 'Nothing matches those filters',
+                description: 'Try a different kind of activity, or show everything again.',
+                icon: Icons.filter,
+                actionLabel: 'Show everything',
+                onAction: clearKinds,
+              }
+            : {
+                title: 'Nothing here yet',
+                description:
+                  scope === 'team'
+                    ? 'Activity from your workspace will show up here.'
+                    : 'Save a link and your activity will start appearing.',
+                icon: Icons.clock,
+              }
+        }
       >
         {(data) => (
           <>
@@ -84,16 +114,48 @@ export function TimelineScreen() {
               <View key={section.title}>
                 <GroupLabel>{section.title}</GroupLabel>
                 <View style={styles.group}>
-                  {section.events.map((event) => (
-                    <TimelineRow
-                      key={event.id}
-                      event={event}
-                      onAction={() => {
-                        if (event.actionLabel === 'Fix') router.push('/notifications');
-                        else showToast(`${event.actionLabel} is coming soon.`, 'info');
-                      }}
-                    />
-                  ))}
+                  {section.events.map((event) => {
+                    // Every event that references something opens it when the
+                    // row itself is tapped. What the *label* does depends on the
+                    // event: undo hits the server, reply opens the composer.
+                    const { target } = event;
+
+                    // An event with nothing to open still has to answer a tap —
+                    // saying so is better than a row that silently does nothing.
+                    const open = target
+                      ? () => router.push(hrefForTarget(target))
+                      : () =>
+                          showToast(
+                            'This activity has nothing left to open.',
+                            'info',
+                          );
+
+                    let onAction: () => void;
+                    switch (event.actionKind) {
+                      case 'undo':
+                        onAction = () => undo.mutate(event.id);
+                        break;
+                      case 'reply':
+                        onAction = () =>
+                          router.push({
+                            pathname: '/timeline-reply',
+                            params: { eventId: event.id },
+                          });
+                        break;
+                      default:
+                        onAction = open;
+                    }
+
+                    return (
+                      <TimelineRow
+                        key={event.id}
+                        event={event}
+                        onOpen={open}
+                        onAction={onAction}
+                        actionPending={undo.isPending && undo.variables === event.id}
+                      />
+                    );
+                  })}
                 </View>
               </View>
             ))}
@@ -104,8 +166,20 @@ export function TimelineScreen() {
   );
 }
 
-function TimelineRow({ event, onAction }: { event: TimelineEvent; onAction: () => void }) {
-  const config = KIND_STYLES[event.kind];
+function TimelineRow({
+  event,
+  onAction,
+  onOpen,
+  actionPending = false,
+}: {
+  event: TimelineEvent;
+  onAction: () => void;
+  /** What tapping the row body does. */
+  onOpen?: () => void;
+  /** Dims and locks the label while its mutation is in flight. */
+  actionPending?: boolean;
+}) {
+  const config = KIND_STYLES[event.kind] ?? FALLBACK_KIND_STYLE;
   const isPink = config.pink === true;
 
   return (
@@ -114,6 +188,7 @@ function TimelineRow({ event, onAction }: { event: TimelineEvent; onAction: () =
       elevated={false}
       radius={radii.row}
       style={styles.row}
+      onPress={onOpen}
       accessibilityLabel={`${event.lead}${event.body}`}
     >
       {isPink ? (
@@ -148,7 +223,14 @@ function TimelineRow({ event, onAction }: { event: TimelineEvent; onAction: () =
       </View>
 
       {event.actionLabel ? (
-        <Pressable onPress={onAction} accessibilityRole="button" hitSlop={8}>
+        <Pressable
+          onPress={onAction}
+          disabled={actionPending}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: actionPending, busy: actionPending }}
+          hitSlop={8}
+          style={actionPending ? styles.actionPending : undefined}
+        >
           <Text
             variant="metaStrong"
             tone={event.actionTone === 'danger' ? 'danger' : 'ink'}
@@ -188,4 +270,5 @@ const styles = StyleSheet.create({
   },
   rowBody: { flex: 1, minWidth: 0 },
   rowMeta: { marginTop: spacing.xxs },
+  actionPending: { opacity: 0.4 },
 });

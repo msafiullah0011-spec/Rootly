@@ -29,6 +29,12 @@ export interface QueryBoundaryProps<TData> {
     icon?: IconComponent;
     actionLabel?: string;
     onAction?: () => void;
+    /**
+     * Centres the state in whatever height is left below the header, rather
+     * than letting it sit right under it. Needs the screen's content container
+     * to stretch — pass `contentStyle={{ flexGrow: 1 }}` to `Screen`.
+     */
+    fill?: boolean;
   };
   /** Renders errors inline rather than as a full-height state. */
   compact?: boolean;
@@ -55,6 +61,7 @@ export function QueryBoundary<TData>({
           icon={empty.icon}
           actionLabel={empty.actionLabel}
           onAction={empty.onAction}
+          fill={empty.fill}
           compact={compact}
         />
       );

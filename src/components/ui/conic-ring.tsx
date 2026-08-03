@@ -7,24 +7,41 @@ import Svg, { Path } from 'react-native-svg';
 import { accentOrder, accents, colors } from '@/theme';
 
 /**
- * The five-segment brand ring.
+ * The brand ring.
  *
  * The handoff draws this as a CSS `conic-gradient` — five 64° arcs starting at
  * −8°, separated by 8° gaps painted in the background colour. RN has no conic
- * gradient, so it's rebuilt as five stroked SVG arcs with the same geometry.
+ * gradient, so it's rebuilt as stroked SVG arcs with the same geometry.
+ *
+ * The arc count is a parameter rather than a constant: on root detail the ring
+ * *is* the root's shelves, one arc each in the shelf's own accent, so a root
+ * with three shelves shows three arcs. `ringSegmentAngle` gives the midpoint of
+ * an arc so callers can pin something to it. Passing no `segments` keeps the
+ * decorative five-accent ring the splash and empty home use.
  *
  * Used at three sizes: 150 on the splash (ink gaps), 236 on root detail, and
  * 180 at 40% opacity on the empty home.
  */
 
-const SEGMENT_DEGREES = 64;
 const GAP_DEGREES = 8;
-const START_DEGREES = -8;
+
+/**
+ * Where an arc's midpoint sits, clockwise from 12 o'clock.
+ *
+ * The five-segment case reduces to the handoff's geometry exactly: 24°, 96°,
+ * 168°, 240°, 312°.
+ */
+export function ringSegmentAngle(index: number, count: number): number {
+  const step = 360 / Math.max(count, 1);
+  return -GAP_DEGREES + index * step + (step - GAP_DEGREES) / 2;
+}
 
 export interface ConicRingProps {
   size: number;
   /** Ring thickness. The handoff insets the inner disc by 18 (150) / 26 (236). */
   thickness: number;
+  /** One colour per arc. Defaults to the five-accent brand rotation. */
+  segments?: string[];
   /** Colour of the gaps between segments — ink on the splash, cream elsewhere. */
   gapColor?: string;
   /** Plays the `ringIn` entrance (scale .86 → 1). */
@@ -39,6 +56,7 @@ export interface ConicRingProps {
 export function ConicRing({
   size,
   thickness,
+  segments,
   gapColor = colors.screen,
   animate = false,
   animationDuration = 700,
@@ -64,16 +82,21 @@ export function ConicRing({
   const radius = (size - thickness) / 2;
   const center = size / 2;
 
+  // An empty `segments` array would leave nothing to draw, so an emptied ring
+  // falls back to the decorative rotation rather than vanishing.
+  const arcs = segments?.length ? segments : accentOrder.map((name) => accents[name]);
+  const step = 360 / arcs.length;
+
   return (
     <Animated.View style={[{ width: size, height: size }, animatedStyle, style]}>
       <Svg width={size} height={size}>
-        {accentOrder.map((name, index) => {
-          const start = START_DEGREES + index * (SEGMENT_DEGREES + GAP_DEGREES);
+        {arcs.map((color, index) => {
+          const start = -GAP_DEGREES + index * step;
           return (
             <Path
-              key={name}
-              d={describeArc(center, center, radius, start, start + SEGMENT_DEGREES)}
-              stroke={accents[name]}
+              key={index}
+              d={describeArc(center, center, radius, start, start + step - GAP_DEGREES)}
+              stroke={color}
               strokeWidth={thickness}
               fill="none"
             />

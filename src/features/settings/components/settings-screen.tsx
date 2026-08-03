@@ -42,7 +42,13 @@ export function SettingsScreen() {
         Settings
       </Text>
 
-      <Card padding={spacing.xxl} style={styles.accountCard}>
+      <Card
+        padding={spacing.xxl}
+        style={styles.accountCard}
+        onPress={() => router.push('/profile')}
+        accessibilityLabel={`My profile: ${user?.name ?? 'your account'}`}
+        accessibilityHint="Opens your profile to edit it"
+      >
         <Avatar initial={initial(user?.name ?? '?')} accent={user?.accent ?? 'lavender'} size={56} />
 
         <View style={styles.accountText}>
@@ -57,6 +63,8 @@ export function SettingsScreen() {
         {user?.plan === 'pro' ? (
           <Badge label="Pro" background={colors.accents.yellow} color={colors.ink} />
         ) : null}
+
+        <Icons.chevronRight size={18} color={colors.inkMuted} strokeWidth={STROKE} />
       </Card>
 
       <Text variant="meta" tone="muted" style={styles.groupLabel}>
@@ -77,7 +85,7 @@ export function SettingsScreen() {
           title="Connected accounts"
           card={false}
           chevron
-          onPress={() => showToast('Connected accounts are coming soon.', 'info')}
+          onPress={() => router.push('/connected-accounts')}
           leading={<IconBubble icon={Icons.link} accent="blue" size={36} iconSize={18} strokeWidth={STROKE} />}
           trailing={
             <Text variant="meta" tone="muted">

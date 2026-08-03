@@ -174,6 +174,23 @@ export const askAnswerSchema = z.object({
 });
 export type AskAnswer = z.infer<typeof askAnswerSchema>;
 
+/* ----------------------------------------------------------------- targets */
+
+/**
+ * Where something in the app points. Anything that references a place in the
+ * hierarchy — a timeline row, an alert, a workspace assignment — carries one of
+ * these three, and `hrefForTarget` turns it into a route.
+ *
+ * Absent when there's nothing to open: those rows say so rather than
+ * navigating nowhere.
+ */
+export const targetSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('link'), linkId: z.string() }),
+  z.object({ type: z.literal('shelf'), rootId: z.string(), shelfId: z.string() }),
+  z.object({ type: z.literal('root'), rootId: z.string() }),
+]);
+export type Target = z.infer<typeof targetSchema>;
+
 /* ----------------------------------------------------------- notifications */
 
 export const notificationSchema = z.object({
@@ -185,14 +202,39 @@ export const notificationSchema = z.object({
   actionLabel: z.string().optional(),
   createdAt: z.string(),
   read: z.boolean().default(false),
+  /** What the card and its action open. */
+  target: targetSchema.optional(),
 });
 export type AppNotification = z.infer<typeof notificationSchema>;
 
 /* --------------------------------------------------------------- timeline */
 
+export const timelineKindSchema = z.enum([
+  'added',
+  'ai_summary',
+  'dead_link',
+  'merged',
+  'renamed',
+  'archived',
+  'comment',
+]);
+export type TimelineKind = z.infer<typeof timelineKindSchema>;
+
+/** Where the row's action lands. See `targetSchema`. */
+export const timelineTargetSchema = targetSchema;
+export type TimelineTarget = Target;
+
+/**
+ * What the row's action *does*, as opposed to what it says. `open` navigates to
+ * the target; the other two hit an endpoint, so the server decides whether the
+ * action is still available — an undone merge comes back as `open`.
+ */
+export const timelineActionKindSchema = z.enum(['open', 'undo', 'reply']);
+export type TimelineActionKind = z.infer<typeof timelineActionKindSchema>;
+
 export const timelineEventSchema = z.object({
   id: z.string(),
-  kind: z.enum(['added', 'ai_summary', 'dead_link', 'merged', 'renamed', 'archived', 'comment']),
+  kind: timelineKindSchema,
   /** Bold lead-in, e.g. "Added". */
   lead: z.string(),
   /** Remainder of the sentence. */
@@ -203,7 +245,9 @@ export const timelineEventSchema = z.object({
   actionLabel: z.string().optional(),
   /** `danger` renders the action in red, per the "Fix" affordance. */
   actionTone: z.enum(['default', 'danger']).default('default'),
+  actionKind: timelineActionKindSchema.default('open'),
   scope: z.enum(['personal', 'team']).default('personal'),
+  target: timelineTargetSchema.optional(),
 });
 export type TimelineEvent = z.infer<typeof timelineEventSchema>;
 
@@ -216,6 +260,8 @@ export const sharedFolderSchema = z.object({
   icon: iconKeySchema,
   linkCount: z.number(),
   memberCount: z.number(),
+  /** The people the folder is shared with, for the tile's avatar stack. */
+  members: z.array(memberAvatarSchema).default([]),
 });
 export type SharedFolder = z.infer<typeof sharedFolderSchema>;
 
@@ -224,6 +270,10 @@ export const assignmentSchema = z.object({
   title: z.string(),
   assignedBy: z.string(),
   dueLabel: z.string(),
+  /** What "Start" opens. Same shape as a timeline row's target. */
+  target: targetSchema.optional(),
+  /** Done assignments drop off the list, but the server still returns them. */
+  done: z.boolean().default(false),
 });
 export type Assignment = z.infer<typeof assignmentSchema>;
 
@@ -249,6 +299,23 @@ export const workspaceSchema = z.object({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
+/**
+ * A row in the workspace switcher. Deliberately thinner than `Workspace` — the
+ * switcher only needs enough to draw the list, and loading four full workspaces
+ * to render four lines would be wasteful.
+ */
+export const workspaceSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  accent: accentNameSchema,
+  memberCount: z.number(),
+  /** The workspace the rest of the app is currently reading. */
+  isCurrent: z.boolean().default(false),
+  /** Role the signed-in user holds here — shown as the row's badge. */
+  role: memberRoleSchema.default('member'),
+});
+export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
+
 /* -------------------------------------------------------------------- auth */
 
 export const sessionSchema = z.object({
@@ -269,14 +336,44 @@ export const settingsSchema = z.object({
 });
 export type AppSettings = z.infer<typeof settingsSchema>;
 
+/**
+ * `available` is a provider the user hasn't connected yet. It shares the shape
+ * of a live connection deliberately — the screen renders one list, and a
+ * connect/disconnect only flips this field.
+ */
+export const connectedAccountStatusSchema = z.enum(['connected', 'expired', 'available']);
+export type ConnectedAccountStatus = z.infer<typeof connectedAccountStatusSchema>;
+
+export const connectedAccountSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Why the account matters — "Ads and Analytics". */
+  purpose: z.string(),
+  /** The signed-in identity. Absent until the account is connected. */
+  accountLabel: z.string().optional(),
+  /** Resolved through `iconForKey`, so any glyph in the vocabulary works. */
+  icon: z.string().default('link'),
+  accent: accentNameSchema,
+  status: connectedAccountStatusSchema.default('available'),
+  /** Links whose logins live behind this account. */
+  linkCount: z.number().default(0),
+  connectedAt: z.string().optional(),
+  syncedAt: z.string().optional(),
+});
+export type ConnectedAccount = z.infer<typeof connectedAccountSchema>;
+
 /* ------------------------------------------------------------ collections */
 
 export const rootListSchema = z.array(rootSchema);
 export const shelfListSchema = z.array(shelfSchema);
 export const linkListSchema = z.array(linkSchema);
 export const notificationListSchema = z.array(notificationSchema);
+export const memberListSchema = z.array(memberSchema);
 export const timelineListSchema = z.array(timelineEventSchema);
 export const suggestionListSchema = z.array(suggestionSchema);
+export const connectedAccountListSchema = z.array(connectedAccountSchema);
+export const inviteListSchema = z.array(inviteSchema);
+export const workspaceSummaryListSchema = z.array(workspaceSummarySchema);
 
 /** Everything Home needs, in one round trip. */
 export const homeFeedSchema = z.object({

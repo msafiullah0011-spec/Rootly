@@ -22,6 +22,8 @@ export interface EmptyStateProps {
   actionLabel?: string;
   onAction?: () => void;
   compact?: boolean;
+  /** Takes the remaining height of the screen and centres in it. */
+  fill?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -32,10 +34,11 @@ export function EmptyState({
   actionLabel,
   onAction,
   compact = false,
+  fill = false,
   style,
 }: EmptyStateProps) {
   return (
-    <View style={[styles.container, compact && styles.compact, style]}>
+    <View style={[styles.container, compact && styles.compact, fill && styles.fill, style]}>
       <IconBubble icon={icon} backgroundColor={colors.sand} color={colors.inkFaint} size={56} iconSize={24} />
 
       <Text variant="rowTitle" align="center" style={styles.title}>
@@ -126,9 +129,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing['3xl'],
   },
   compact: { paddingVertical: spacing['5xl'] },
+  fill: { flex: 1 },
   title: { marginTop: spacing.xl },
   description: { marginTop: spacing.sm, maxWidth: 280 },
-  action: { marginTop: spacing['3xl'] },
+  // Buttons are `alignSelf: 'flex-start'` by default, which would win over the
+  // container's `alignItems` and hang the CTA off the left edge.
+  action: { marginTop: spacing['3xl'], alignSelf: 'center' },
 
   inline: {
     flexDirection: 'row',

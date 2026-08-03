@@ -46,17 +46,25 @@ export const queryKeys = {
   timeline: {
     all: ['timeline'] as const,
     list: (scope: string) => [...queryKeys.timeline.all, 'list', scope] as const,
+    detail: (eventId: string) => [...queryKeys.timeline.all, 'detail', eventId] as const,
   },
 
   workspace: {
     all: ['workspace'] as const,
+    /** Every workspace the user belongs to — the switcher's list. */
+    list: () => [...queryKeys.workspace.all, 'list'] as const,
     current: () => [...queryKeys.workspace.all, 'current'] as const,
     members: () => [...queryKeys.workspace.all, 'members'] as const,
     invites: () => [...queryKeys.workspace.all, 'invites'] as const,
+    folder: (folderId: string) => [...queryKeys.workspace.all, 'folder', folderId] as const,
+    folderLinks: (folderId: string) =>
+      [...queryKeys.workspace.all, 'folder', folderId, 'links'] as const,
   },
 
   settings: {
     all: ['settings'] as const,
     detail: () => [...queryKeys.settings.all, 'detail'] as const,
+    profile: () => [...queryKeys.settings.all, 'profile'] as const,
+    connectedAccounts: () => [...queryKeys.settings.all, 'connected-accounts'] as const,
   },
 } as const;

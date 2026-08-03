@@ -13,11 +13,12 @@ import { IconBubble } from '@/components/ui/icon-bubble';
 import { IconButton } from '@/components/ui/icon-button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Text } from '@/components/ui/text';
+import { describeTarget, hrefForTarget } from '@/features/timeline/targets';
 import { formatRelative } from '@/lib/date';
 import { initial, joinMeta, pluralize } from '@/lib/format';
 import { useUiStore } from '@/store/ui.store';
 import { alpha, colors, layout, radii, spacing, status } from '@/theme';
-import { useWorkspace } from '../hooks';
+import { useCompleteAssignment, useWorkspace } from '../hooks';
 
 /**
  * Frame 15 — the team workspace hub: members, shared folders, what's assigned
@@ -34,6 +35,7 @@ export function WorkspaceScreen() {
   const router = useRouter();
   const showToast = useUiStore((state) => state.showToast);
   const workspace = useWorkspace();
+  const completeAssignment = useCompleteAssignment();
 
   return (
     <Screen hasTabBar onRefresh={() => void workspace.refetch()} refreshing={workspace.isRefetching}>
@@ -51,9 +53,11 @@ export function WorkspaceScreen() {
 
                 <View style={styles.switcherText}>
                   <Pressable
-                    onPress={() => showToast('Workspace switching is coming soon.', 'info')}
+                    onPress={() => router.push('/team/switch')}
                     accessibilityRole="button"
                     accessibilityLabel={`Switch workspace, currently ${data.name}`}
+                    accessibilityHint="Opens the list of workspaces you belong to"
+                    hitSlop={8}
                     style={styles.switcherTitle}
                   >
                     <Text variant="navTitle" numberOfLines={1}>
@@ -88,7 +92,11 @@ export function WorkspaceScreen() {
                     elevated={false}
                     radius={radii.row}
                     style={styles.memberRow}
+                    onPress={() =>
+                      router.push({ pathname: '/team/member', params: { memberId: member.id } })
+                    }
                     accessibilityLabel={`${member.name}, ${badge.label}`}
+                    accessibilityHint="Opens their role and access"
                   >
                     <Avatar initial={initial(member.name)} accent={member.accent} size={40} />
 
@@ -131,8 +139,14 @@ export function WorkspaceScreen() {
                   elevated={false}
                   radius={radii.row}
                   style={styles.folderTile}
-                  onPress={() => showToast('Shared folders are coming soon.', 'info')}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/team/folders/[folderId]',
+                      params: { folderId: folder.id },
+                    })
+                  }
                   accessibilityLabel={`${folder.name}, ${pluralize(folder.linkCount, 'link')}`}
+                  accessibilityHint="Opens this shared folder"
                 >
                   <IconBubble
                     icon={iconForKey(folder.icon)}
@@ -159,38 +173,70 @@ export function WorkspaceScreen() {
                   Assigned to you
                 </Text>
 
-                {data.assignments.map((assignment) => (
-                  <Card
-                    key={assignment.id}
-                    tone="pink"
-                    elevated={false}
-                    radius={radii.row}
-                    style={styles.assignment}
-                  >
-                    <View style={styles.assignmentBubble}>
-                      <Icons.checklist size={16} color={colors.ink} strokeWidth={STROKE} />
-                    </View>
+                {data.assignments.map((assignment) => {
+                  // An assignment points at the thing it's asking you to review.
+                  // Without a target there's nothing to open, so the label says
+                  // so rather than navigating nowhere.
+                  const { target } = assignment;
+                  const start = target
+                    ? () => router.push(hrefForTarget(target))
+                    : () => showToast('That review has nothing to open yet.', 'info');
 
-                    <View style={styles.assignmentText}>
-                      <Text variant="bodySmStrong">{assignment.title}</Text>
-                      <Text
-                        variant="micro"
-                        color={alpha.onPinkMutedStrong}
-                        style={styles.assignmentMeta}
-                      >
-                        {joinMeta(`Assigned by ${assignment.assignedBy}`, assignment.dueLabel)}
-                      </Text>
-                    </View>
+                  const pending =
+                    completeAssignment.isPending &&
+                    completeAssignment.variables?.assignmentId === assignment.id;
 
-                    <Pressable
-                      onPress={() => showToast('Assignments are coming soon.', 'info')}
-                      accessibilityRole="button"
-                      hitSlop={8}
+                  return (
+                    <Card
+                      key={assignment.id}
+                      tone="pink"
+                      elevated={false}
+                      radius={radii.row}
+                      style={styles.assignment}
+                      onPress={start}
+                      accessibilityLabel={assignment.title}
+                      accessibilityHint={target ? describeTarget(target) : undefined}
                     >
-                      <Text variant="metaStrong">Start</Text>
-                    </Pressable>
-                  </Card>
-                ))}
+                      {/* Long-pressing isn't discoverable, so ticking one off is
+                          its own control beside "Start". */}
+                      <Pressable
+                        onPress={() =>
+                          completeAssignment.mutate({
+                            assignmentId: assignment.id,
+                            title: assignment.title,
+                          })
+                        }
+                        disabled={pending}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Mark “${assignment.title}” done`}
+                        hitSlop={8}
+                        style={[styles.assignmentBubble, pending && styles.assignmentPending]}
+                      >
+                        <Icons.checklist size={16} color={colors.ink} strokeWidth={STROKE} />
+                      </Pressable>
+
+                      <View style={styles.assignmentText}>
+                        <Text variant="bodySmStrong">{assignment.title}</Text>
+                        <Text
+                          variant="micro"
+                          color={alpha.onPinkMutedStrong}
+                          style={styles.assignmentMeta}
+                        >
+                          {joinMeta(`Assigned by ${assignment.assignedBy}`, assignment.dueLabel)}
+                        </Text>
+                      </View>
+
+                      <Pressable
+                        onPress={start}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Start ${assignment.title}`}
+                        hitSlop={8}
+                      >
+                        <Text variant="metaStrong">Start</Text>
+                      </Pressable>
+                    </Card>
+                  );
+                })}
               </>
             ) : null}
 
@@ -202,7 +248,19 @@ export function WorkspaceScreen() {
 
                 <View style={styles.memberList}>
                   {data.pendingInvites.map((invite) => (
-                    <View key={invite.id} style={styles.pendingRow}>
+                    <Pressable
+                      key={invite.id}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/team/invite-options',
+                          params: { inviteId: invite.id },
+                        })
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`Invite to ${invite.email}, pending`}
+                      accessibilityHint="Resend or revoke this invite"
+                      style={({ pressed }) => [styles.pendingRow, pressed && styles.pendingPressed]}
+                    >
                       <IconBubble
                         icon={Icons.mail}
                         backgroundColor={colors.sand}
@@ -217,7 +275,10 @@ export function WorkspaceScreen() {
                           {invite.email}
                         </Text>
                         <Text variant="micro" tone="muted">
-                          Invited {formatRelative(invite.invitedAt).toLowerCase()}
+                          {joinMeta(
+                            `Invited ${formatRelative(invite.invitedAt).toLowerCase()}`,
+                            invite.access === 'edit' ? 'can edit' : 'can view',
+                          )}
                         </Text>
                       </View>
 
@@ -226,7 +287,7 @@ export function WorkspaceScreen() {
                         background={alpha.pendingBadge}
                         color={status.slow.text}
                       />
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               </>
@@ -294,6 +355,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  assignmentPending: { opacity: 0.5 },
   assignmentText: { flex: 1, minWidth: 0 },
   assignmentMeta: { marginTop: 2 },
 
@@ -309,4 +371,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.base,
     paddingHorizontal: spacing.lg,
   },
+  pendingPressed: { opacity: 0.75 },
 });

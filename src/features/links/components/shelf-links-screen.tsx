@@ -6,6 +6,7 @@ import { Screen } from '@/components/layout/screen';
 import { ScreenHeader } from '@/components/layout/screen-header';
 import { Icons, STROKE, iconForKey } from '@/components/icons';
 import { IconBubble } from '@/components/ui/icon-bubble';
+import { IconButton } from '@/components/ui/icon-button';
 import { SwipeableRow, defaultSwipeActions } from '@/components/ui/swipeable-row';
 import { Text } from '@/components/ui/text';
 import { joinMeta, pluralize } from '@/lib/format';
@@ -30,11 +31,31 @@ export function ShelfLinksScreen({ shelfId }: { shelfId: string }) {
   const links = useShelfLinks(shelfId);
   const archive = useArchiveLink(shelfId);
 
+  // An empty shelf gets the whole screen for its one instruction, rather than
+  // an empty state pinned under the header with dead space below it.
+  const isEmpty = links.data?.length === 0;
+  const rootId = shelf.data?.rootId;
+
   return (
-    <Screen>
+    <Screen contentStyle={isEmpty ? styles.emptyContent : undefined}>
       <ScreenHeader
         align="left"
         title={shelf.data?.name}
+        trailing={
+          rootId ? (
+            <IconButton
+              icon={Icons.moreVertical}
+              accessibilityLabel="Shelf options"
+              iconSize={20}
+              onPress={() =>
+                router.push({
+                  pathname: '/shelf-options',
+                  params: { rootId, shelfId, origin: 'shelf' },
+                })
+              }
+            />
+          ) : null
+        }
         leading={
           shelf.data ? (
             <IconBubble
@@ -57,12 +78,15 @@ export function ShelfLinksScreen({ shelfId }: { shelfId: string }) {
         }
       />
 
-      <View style={styles.hint}>
-        <Icons.filter size={14} color={colors.inkMuted} strokeWidth={STROKE} />
-        <Text variant="meta" tone="muted">
-          Swipe a card to archive or move
-        </Text>
-      </View>
+      {/* Nothing to swipe on an empty shelf, so the hint would be noise. */}
+      {isEmpty ? null : (
+        <View style={styles.hint}>
+          <Icons.filter size={14} color={colors.inkMuted} strokeWidth={STROKE} />
+          <Text variant="meta" tone="muted">
+            Swipe a card to archive or move
+          </Text>
+        </View>
+      )}
 
       <QueryBoundary
         query={links}
@@ -73,6 +97,7 @@ export function ShelfLinksScreen({ shelfId }: { shelfId: string }) {
           icon: Icons.link,
           actionLabel: 'Add link',
           onAction: () => router.push('/quick-add'),
+          fill: true,
         }}
       >
         {(data) => (
@@ -96,6 +121,8 @@ export function ShelfLinksScreen({ shelfId }: { shelfId: string }) {
 }
 
 const styles = StyleSheet.create({
+  // Lets the empty state's `flex: 1` have something to fill.
+  emptyContent: { flexGrow: 1 },
   hint: {
     flexDirection: 'row',
     alignItems: 'center',

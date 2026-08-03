@@ -1,6 +1,7 @@
 import type {
   AppNotification,
   AppSettings,
+  ConnectedAccount,
   Link,
   Root,
   Shelf,
@@ -10,15 +11,20 @@ import type {
   Workspace,
 } from '../schemas';
 import {
+  seedConnectedAccounts,
+  seedCurrentWorkspaceId,
+  seedFolderLinks,
   seedLinks,
+  seedMergedDuplicates,
   seedNotifications,
+  seedResumeLinkId,
   seedRoots,
   seedSettings,
   seedShelves,
   seedSuggestions,
   seedTimeline,
   seedUser,
-  seedWorkspace,
+  seedWorkspaces,
 } from './seed';
 
 /**
@@ -38,8 +44,22 @@ interface Db {
   notifications: AppNotification[];
   timeline: TimelineEvent[];
   suggestions: Suggestion[];
-  workspace: Workspace;
+  /** Every workspace the user belongs to; the switcher moves between them. */
+  workspaces: Workspace[];
+  /** Which of `workspaces` the `/workspace*` endpoints read and write. */
+  currentWorkspaceId: string;
+  /**
+   * The link Home's "Jump back in" card resumes to — the last one the user
+   * opened. Seeded so the first Home matches the handoff, then rewritten by
+   * `POST /links/:linkId/open` for the rest of the session.
+   */
+  resumeLinkId: string;
+  /** Shared folder id → the link ids it holds. */
+  folderLinks: Record<string, string[]>;
+  /** Timeline event id → the archived link ids its "Undo" restores. */
+  mergedDuplicates: Record<string, string[]>;
   settings: AppSettings;
+  connectedAccounts: ConnectedAccount[];
   /** Cleared by the onboarding flow's "no roots yet" demo. */
   onboardingComplete: boolean;
 }
@@ -56,10 +76,23 @@ export const db: Db = {
   notifications: clone(seedNotifications),
   timeline: clone(seedTimeline),
   suggestions: clone(seedSuggestions),
-  workspace: clone(seedWorkspace),
+  workspaces: clone(seedWorkspaces),
+  currentWorkspaceId: seedCurrentWorkspaceId,
+  resumeLinkId: seedResumeLinkId,
+  folderLinks: clone(seedFolderLinks),
+  mergedDuplicates: clone(seedMergedDuplicates),
   settings: clone(seedSettings),
+  connectedAccounts: clone(seedConnectedAccounts),
   onboardingComplete: true,
 };
+
+/**
+ * The workspace every `/workspace*` endpoint operates on. Falls back to the
+ * first rather than throwing — a dangling id should degrade, not crash the app.
+ */
+export function currentWorkspace(): Workspace {
+  return db.workspaces.find((w) => w.id === db.currentWorkspaceId) ?? db.workspaces[0];
+}
 
 export function resetDb() {
   db.user = clone(seedUser);
@@ -69,8 +102,13 @@ export function resetDb() {
   db.notifications = clone(seedNotifications);
   db.timeline = clone(seedTimeline);
   db.suggestions = clone(seedSuggestions);
-  db.workspace = clone(seedWorkspace);
+  db.workspaces = clone(seedWorkspaces);
+  db.currentWorkspaceId = seedCurrentWorkspaceId;
+  db.resumeLinkId = seedResumeLinkId;
+  db.folderLinks = clone(seedFolderLinks);
+  db.mergedDuplicates = clone(seedMergedDuplicates);
   db.settings = clone(seedSettings);
+  db.connectedAccounts = clone(seedConnectedAccounts);
   db.onboardingComplete = true;
 }
 
@@ -79,6 +117,8 @@ export function clearRoots() {
   db.roots = [];
   db.shelves = [];
   db.links = [];
+  // Nothing left to jump back into.
+  db.resumeLinkId = '';
   db.onboardingComplete = false;
 }
 
@@ -94,6 +134,41 @@ export function recalculateRoot(rootId: string) {
   root.linkCount = links.length;
   root.shelfCount = db.shelves.filter((s) => s.rootId === rootId).length;
   root.deadLinkCount = links.filter((l) => l.status === 'dead').length;
+}
+
+/**
+ * Keeps the settings row's count in step with the connected-accounts list, so
+ * connecting or disconnecting updates both screens.
+ */
+export function recalculateConnectedAccounts() {
+  db.settings.connectedAccountCount = db.connectedAccounts.filter(
+    (account) => account.status !== 'available',
+  ).length;
+}
+
+/**
+ * Keeps the workspace's derived counts honest after a member, invite or link
+ * mutation. The header count is members *plus* outstanding invites — that's why
+ * the design shows "Members 4" above three rows and one pending invite.
+ */
+export function recalculateWorkspace(workspace: Workspace = currentWorkspace()) {
+  const memberIds = new Set(workspace.members.map((m) => m.id));
+
+  workspace.memberCount = workspace.members.length + workspace.pendingInvites.length;
+
+  for (const folder of workspace.sharedFolders) {
+    // Someone removed from the workspace loses their folder access with it.
+    folder.members = folder.members.filter((m) => memberIds.has(m.id));
+    folder.memberCount = folder.members.length;
+    folder.linkCount = folderLinkIds(folder.id).length;
+  }
+}
+
+/** The live link ids in a shared folder — archived and deleted links dropped. */
+export function folderLinkIds(folderId: string): string[] {
+  return (db.folderLinks[folderId] ?? []).filter((linkId) =>
+    db.links.some((link) => link.id === linkId && !link.archived),
+  );
 }
 
 /** Recomputes a shelf's link count after a link mutation. */

@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 
+import type { TimelineKind } from '@/api/schemas';
+
 /**
- * Transient UI state that outlives a single screen: toasts, and the confirmation
- * banner the add-flow shows after filing a link.
+ * Transient UI state that outlives a single screen: toasts, the confirmation
+ * banner the add-flow shows after filing a link, and the timeline's kind filter
+ * — which lives here because the filter sheet is a route of its own, presented
+ * over the feed it filters.
  */
 
 export type ToastTone = 'error' | 'success' | 'info';
@@ -21,12 +25,18 @@ interface UiState {
   showToast: (message: string, tone?: ToastTone, options?: Partial<Pick<Toast, 'action' | 'durationMs'>>) => string;
   dismissToast: (id: string) => void;
   clearToasts: () => void;
+
+  /** Timeline kinds to show. Empty means "everything" — the default. */
+  timelineKinds: TimelineKind[];
+  toggleTimelineKind: (kind: TimelineKind) => void;
+  clearTimelineKinds: () => void;
 }
 
 let toastCounter = 0;
 
 export const useUiStore = create<UiState>((set) => ({
   toasts: [],
+  timelineKinds: [],
 
   showToast: (message, tone = 'info', options = {}) => {
     const id = `toast_${(toastCounter += 1)}`;
@@ -45,6 +55,15 @@ export const useUiStore = create<UiState>((set) => ({
   dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
   clearToasts: () => set({ toasts: [] }),
+
+  toggleTimelineKind: (kind) =>
+    set((state) => ({
+      timelineKinds: state.timelineKinds.includes(kind)
+        ? state.timelineKinds.filter((k) => k !== kind)
+        : [...state.timelineKinds, kind],
+    })),
+
+  clearTimelineKinds: () => set({ timelineKinds: [] }),
 }));
 
 /** Imperative access for non-React callers (the query client's error handler). */

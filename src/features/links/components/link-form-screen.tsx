@@ -8,9 +8,10 @@ import { ScreenHeader } from '@/components/layout/screen-header';
 import { Icons, STROKE_BOLD } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Chip, StatusDot } from '@/components/ui/chip';
-import { SelectField, TextField } from '@/components/ui/text-field';
+import { SelectField, SelectOptions, TextField } from '@/components/ui/text-field';
 import { Text } from '@/components/ui/text';
 import { useRoots, useRootShelves } from '@/features/roots/hooks';
+import { pluralize } from '@/lib/format';
 import { accents, alpha, colors, radii, spacing } from '@/theme';
 import { useCreateLink, useLink, useUpdateLink } from '../hooks';
 
@@ -41,6 +42,8 @@ export function LinkFormScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** Which of the two selects has its list open — never both at once. */
+  const [openPicker, setOpenPicker] = useState<'root' | 'shelf' | null>(null);
 
   const shelves = useRootShelves(rootId);
 
@@ -70,19 +73,23 @@ export function LinkFormScreen() {
   const selectedRoot = roots.data?.find((root) => root.id === rootId);
   const selectedShelf = shelves.data?.find((shelf) => shelf.id === shelfId);
 
-  const cycleRoot = () => {
-    if (!roots.data?.length) return;
-    const index = roots.data.findIndex((root) => root.id === rootId);
-    const next = roots.data[(index + 1) % roots.data.length];
-    setRootId(next.id);
-    // The current shelf belongs to the old root, so clear it.
+  const togglePicker = (picker: 'root' | 'shelf') =>
+    setOpenPicker((current) => (current === picker ? null : picker));
+
+  const selectRoot = (nextRootId: string) => {
+    setOpenPicker(null);
+    if (nextRootId === rootId) return;
+    setRootId(nextRootId);
+    // The current shelf belongs to the old root, so clear it and let the effect
+    // above land on the new root's first shelf.
     setShelfId('');
+    setErrors((current) => ({ ...current, rootId: '', shelfId: '' }));
   };
 
-  const cycleShelf = () => {
-    if (!shelves.data?.length) return;
-    const index = shelves.data.findIndex((shelf) => shelf.id === shelfId);
-    setShelfId(shelves.data[(index + 1) % shelves.data.length].id);
+  const selectShelf = (nextShelfId: string) => {
+    setOpenPicker(null);
+    setShelfId(nextShelfId);
+    setErrors((current) => ({ ...current, shelfId: '' }));
   };
 
   const addTag = () => {
@@ -166,7 +173,8 @@ export function LinkFormScreen() {
         <SelectField
           label="Root"
           value={selectedRoot?.name ?? 'Choose'}
-          onPress={cycleRoot}
+          onPress={() => togglePicker('root')}
+          expanded={openPicker === 'root'}
           error={errors.rootId}
           containerStyle={styles.splitField}
           trailing={<Icons.chevronDown size={16} color={colors.inkMuted} strokeWidth={STROKE_BOLD} />}
@@ -175,7 +183,8 @@ export function LinkFormScreen() {
         <SelectField
           label="Shelf"
           value={selectedShelf?.name ?? 'Choose'}
-          onPress={cycleShelf}
+          onPress={() => togglePicker('shelf')}
+          expanded={openPicker === 'shelf'}
           error={errors.shelfId}
           containerStyle={styles.splitField}
           leading={
@@ -184,6 +193,41 @@ export function LinkFormScreen() {
           trailing={<Icons.chevronDown size={16} color={colors.inkMuted} strokeWidth={STROKE_BOLD} />}
         />
       </View>
+
+      {/* The open list sits under the pair, so neither field shifts as it opens. */}
+      {openPicker === 'root' ? (
+        <SelectOptions
+          options={(roots.data ?? []).map((root) => ({
+            id: root.id,
+            label: root.name,
+            meta: pluralize(root.shelfCount, 'shelf', 'shelves'),
+            leading: <StatusDot color={accents[root.accent]} size={12} />,
+          }))}
+          selectedId={rootId}
+          onSelect={selectRoot}
+          emptyLabel={roots.isPending ? 'Loading your roots…' : 'You have no roots yet.'}
+          style={styles.picker}
+        />
+      ) : null}
+
+      {openPicker === 'shelf' ? (
+        <SelectOptions
+          options={(shelves.data ?? []).map((shelf) => ({
+            id: shelf.id,
+            label: shelf.name,
+            meta: pluralize(shelf.linkCount, 'link'),
+            leading: <StatusDot color={accents[shelf.accent]} size={12} />,
+          }))}
+          selectedId={shelfId}
+          onSelect={selectShelf}
+          emptyLabel={
+            shelves.isPending
+              ? 'Loading shelves…'
+              : `${selectedRoot?.name ?? 'This root'} has no shelves yet.`
+          }
+          style={styles.picker}
+        />
+      ) : null}
 
       <Text variant="meta" tone="muted" style={styles.label}>
         Tags
@@ -249,6 +293,8 @@ const styles = StyleSheet.create({
   field: { marginBottom: spacing.xl },
   splitRow: { flexDirection: 'row', gap: spacing.base, marginBottom: spacing.xl },
   splitField: { flex: 1 },
+  // Pulled up under the pair it belongs to, then re-spaced below.
+  picker: { marginTop: -spacing.md, marginBottom: spacing.xl },
 
   label: { marginHorizontal: 2, marginBottom: spacing.sm },
   tagBox: {

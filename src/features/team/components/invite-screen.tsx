@@ -211,7 +211,9 @@ export function InviteScreen() {
                   <IconButton
                     icon={Icons.close}
                     accessibilityLabel={`Revoke invite for ${invite.email}`}
-                    onPress={() => revokeInvite.mutate(invite.id)}
+                    onPress={() =>
+                      revokeInvite.mutate({ inviteId: invite.id, email: invite.email })
+                    }
                     size={32}
                     iconSize={16}
                     color={colors.inkMuted}

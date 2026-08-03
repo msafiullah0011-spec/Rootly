@@ -76,6 +76,38 @@ export default function RootLayout() {
               name="quick-add"
               options={{ presentation: 'transparentModal', animation: 'fade' }}
             />
+            <Stack.Screen
+              name="shelf-form"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="shelf-options"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="root-options"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="timeline-filter"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="timeline-reply"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="team/member"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="team/switch"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
+            <Stack.Screen
+              name="team/invite-options"
+              options={{ presentation: 'transparentModal', animation: 'fade' }}
+            />
             <Stack.Screen name="link-form" options={{ presentation: 'modal' }} />
           </Stack>
 

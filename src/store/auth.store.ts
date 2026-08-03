@@ -31,6 +31,8 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Replaces the cached user after a profile edit, keeping the keychain in step. */
+  setUser: (user: User) => void;
   completeOnboarding: () => void;
   /** Internal: called by the API client when a 401 can't be recovered. */
   clearSession: () => void;
@@ -124,6 +126,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       refreshToken: null,
       needsOnboarding: false,
     });
+  },
+
+  setUser: (user) => {
+    // Persisted so an edit survives a reload — `restore` reads this copy, not
+    // the API, and a stale name in the keychain would resurface on next boot.
+    void secureStorage.set(storageKeys.user, JSON.stringify(user));
+    set({ user });
   },
 
   completeOnboarding: () => set({ needsOnboarding: false }),
